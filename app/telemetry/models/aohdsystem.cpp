@@ -86,7 +86,7 @@ bool AOHDSystem::process_message(const mavlink_message_t &msg)
         case MAVLINK_MSG_ID_OPENHD_STATS_MONITOR_MODE_WIFI_CARD:{
             mavlink_openhd_stats_monitor_mode_wifi_card_t parsedMsg;
             mavlink_msg_openhd_stats_monitor_mode_wifi_card_decode(&msg,&parsedMsg);
-            //qDebug()<<"Got MAVLINK_MSG_ID_OPENHD_WIFI_CARD"<<(int)parsedMsg.card_index<<" "<<(int)parsedMsg.rx_rssi;
+            qDebug()<<"Got MAVLINK_MSG_ID_OPENHD_WIFI_CARD"<<(int)parsedMsg.card_index<<" "<<(int)parsedMsg.count_p_received;
             process_x0(parsedMsg);
             return true;
         }break;
@@ -231,6 +231,7 @@ void AOHDSystem::process_x0(const mavlink_openhd_stats_monitor_mode_wifi_card_t 
             qDebug()<<"Gnd invalid card index"<<msg.card_index;
             return;
         }
+        qDebug()<<"process_x0 : 1"<<msg.card_index<<" count:"<<msg.count_p_received;
         auto& card=WiFiCard::instance_gnd(msg.card_index);
         card.process_mavlink(msg);
         set_current_rx_rssi(WiFiCard::helper_get_gnd_curr_best_rssi());

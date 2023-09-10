@@ -67,6 +67,9 @@ void WiFiCard::process_mavlink(const mavlink_openhd_stats_monitor_mode_wifi_card
             HUDLogMessagesModel::instance().add_message_warning(message.str().c_str());
         }
     }
+
+    set_n_received_packets_rolling(msg.count_p_received);
+
     // Packets received in the last 1 second on this card
     const auto diff=std::chrono::steady_clock::now()-m_last_packets_in_X_second_recalculation;
     if(m_last_packets_in_X_second_value<=-1){
@@ -74,7 +77,7 @@ void WiFiCard::process_mavlink(const mavlink_openhd_stats_monitor_mode_wifi_card
     }else{
         if(diff>=std::chrono::seconds(1)){
             const int64_t delta=msg.count_p_received-m_last_packets_in_X_second_value;
-            set_n_received_packets_rolling(delta);
+            //set_n_received_packets_rolling(delta);
             m_last_packets_in_X_second_value=msg.count_p_received;
             m_last_packets_in_X_second_recalculation=std::chrono::steady_clock::now();
         }

@@ -506,7 +506,10 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
         mavlink_esc_telemetry_1_to_4_t esc_telemetry;
         mavlink_msg_esc_telemetry_1_to_4_decode(&msg, &esc_telemetry);
 
-        set_esc_temp((int)esc_telemetry.temperature[0]);
+        set_esc_temp((int)esc_telemetry.temperature[1]);
+        set_airspeed_sensor_temperature_degree((int)esc_telemetry.temperature[0]);
+        //set_preasure_sensor_temperature_degree((int)scaled_pressure.temperature/100);
+
         break;
     }
     case MAVLINK_MSG_ID_ADSB_VEHICLE: {
