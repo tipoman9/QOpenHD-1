@@ -53,8 +53,14 @@ void HorizonLadder::paint(QPainter* painter) {
     }
     //weird rounding issue where decimals make ladder dissappear
     roll_degree = round(roll_degree);
-    pitch_degree = round(pitch_degree);
-    //qDebug()<<"Roll:"<<roll_degree<<" Pitch:"<<pitch_degree;
+    //pitch_degree = round(pitch_degree);
+
+    std::string str = std::to_string(pitch_degree);
+    qDebug()<<"Roll:"<<roll_degree<<" Pitch:"<<pitch_degree<< " : " << str.c_str();
+
+    
+
+
 
     if(show_center_indicator){
         painter->setPen(m_color);
@@ -446,7 +452,7 @@ void HorizonLadder::setRoll(int roll) {
 }
 
 
-void HorizonLadder::setPitch(int pitch) {
+void HorizonLadder::setPitch(double pitch) {
     m_pitch = pitch;
     emit pitchChanged(m_pitch);
     update();

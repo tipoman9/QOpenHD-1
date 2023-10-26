@@ -18,7 +18,7 @@ class HorizonLadder : public QQuickPaintedItem {
     Q_PROPERTY(int horizonRange MEMBER m_horizonRange WRITE setHorizonRange NOTIFY horizonRangeChanged)
     Q_PROPERTY(int horizonStep MEMBER m_horizonStep WRITE setHorizonStep NOTIFY horizonStepChanged)
     Q_PROPERTY(int roll MEMBER m_roll WRITE setRoll NOTIFY rollChanged)
-    Q_PROPERTY(int pitch MEMBER m_pitch WRITE setPitch NOTIFY pitchChanged)
+    Q_PROPERTY(double pitch MEMBER m_pitch WRITE setPitch NOTIFY pitchChanged)
 
     Q_PROPERTY(int heading MEMBER m_heading WRITE setHeading NOTIFY headingChanged)
     Q_PROPERTY(int homeHeading MEMBER m_homeHeading WRITE setHomeHeading NOTIFY homeHeadingChanged)
@@ -52,7 +52,7 @@ public slots:
     void setHorizonRange(int horizonRange);
     void setHorizonStep(int horizonStep);
     void setRoll(int roll);
-    void setPitch(int pitch);
+    void setPitch(double pitch);
 
     void setHeading(int heading);
     void setHomeHeading(int homeHeading);
@@ -95,7 +95,7 @@ private:
     int m_horizonRange;
 
     int m_roll;
-    int m_pitch;
+    double m_pitch;
 
     int m_heading;
     int m_homeHeading;
