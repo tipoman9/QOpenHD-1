@@ -210,13 +210,15 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
         // Not handled by mavsdk telemetry callback(s) anymore
         m_n_messages_update_rate_mavlink_message_attitude++;
         const auto roll_deg=Telemetryutil::angle_mavlink_rad_to_degree(attitude.roll);
-        const auto pitch_deg=Telemetryutil::angle_mavlink_rad_to_degree(attitude.pitch);
+        const double pitch_deg=Telemetryutil::angle_mavlink_rad_to_degree2(attitude.pitch);
         set_roll((double)roll_deg);
         set_pitch((double)pitch_deg);
+         //std::string str = std::to_string(pitch_deg);
         // TODO what about yaw ?! - heading something weird is going on there
         //const auto yaw_deg=Telemetryutil::angle_mavlink_rad_to_degree(attitude.yaw);
         //set_hdg(yaw_deg);
         //qDebug()<<"degree Roll:"<<roll_deg<<" Pitch:"<<pitch_deg<<" Yaw:"<<yaw_deg;
+        //qDebug()<<"degree Roll:"<<roll_deg<<" Pitch:"<<pitch_deg<<"  : "<<attitude.pitch << " : " << str.c_str();
         m_n_attitude_messages++;
         break;
     }
@@ -259,13 +261,18 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
         break;
     }
     case MAVLINK_MSG_ID_RC_CHANNELS_RAW:{
-        // Seems to be outdated
+        // Seems to be outdated - NOT, used for INAV
         //qDebug()<<"Got message RC channels raw";
         mavlink_rc_channels_raw_t rc_channels_raw;
         mavlink_msg_rc_channels_raw_decode(&msg, &rc_channels_raw);
-        //const auto tmp=Telemetryutil::mavlink_msg_rc_channels_raw_to_array(rc_channels_raw);
-        //RCChannelsModel::instanceFC().update_all_channels(tmp);
+
+        //qDebug()<<"Channels "<<rc_channels_raw.chan1_raw<<" | "<<rc_channels_raw.chan2_raw<<" | "<<rc_channels_raw.chan3_raw<<" | "<<rc_channels_raw.chan4_raw<<" | ";
+
+        //NEEDED for INAV , tisho 
+        const auto tmp=Telemetryutil::mavlink_msg_rc_channels_raw_to_array(rc_channels_raw);
+        RCChannelsModel::instanceFC().update_all_channels(tmp);
         set_rc_rssi_percentage( Telemetryutil::mavlink_rc_rssi_to_percent(rc_channels_raw.rssi));
+        
         break;
     }
     case MAVLINK_MSG_ID_RC_CHANNELS:{
@@ -303,7 +310,7 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
     case MAVLINK_MSG_ID_MISSION_ITEM_INT:{
         mavlink_mission_item_int_t item;
         mavlink_msg_mission_item_int_decode(&msg, &item);
-        //qDebug()<<"Got MAVLINK_MSG_ID_MISSION_ITEM_INT"<<Telemetryutil::mavlink_frame_to_string(item.frame);
+        qDebug()<<"Got MAVLINK_MSG_ID_MISSION_ITEM_INT"<<Telemetryutil::mavlink_frame_to_string(item.frame);
         {
            if(item.frame==MAV_FRAME_GLOBAL || item.frame==MAV_FRAME_GLOBAL_RELATIVE_ALT){
                double lat=static_cast<double>(item.x)* 1e-7;
