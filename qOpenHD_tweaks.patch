@@ -1,0 +1,156 @@
+From cd746e91aeea21ec21f335419ea2b48626eff434 Mon Sep 17 00:00:00 2001
+From: Tipo Man <tipoman9@gmail.com>
+Date: Thu, 26 Oct 2023 03:00:50 +0300
+Subject: [PATCH 1/2] T
+
+---
+ app/telemetry/models/fcmavlinksystem.cpp | 17 ++++++++++++-----
+ app/telemetry/telemetryutil.hpp          |  5 +++++
+ 2 files changed, 17 insertions(+), 5 deletions(-)
+
+diff --git a/app/telemetry/models/fcmavlinksystem.cpp b/app/telemetry/models/fcmavlinksystem.cpp
+index f5dd03a43..ba4937907 100644
+--- a/app/telemetry/models/fcmavlinksystem.cpp
++++ b/app/telemetry/models/fcmavlinksystem.cpp
+@@ -210,13 +210,15 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
+         // Not handled by mavsdk telemetry callback(s) anymore
+         m_n_messages_update_rate_mavlink_message_attitude++;
+         const auto roll_deg=Telemetryutil::angle_mavlink_rad_to_degree(attitude.roll);
+-        const auto pitch_deg=Telemetryutil::angle_mavlink_rad_to_degree(attitude.pitch);
++        const double pitch_deg=Telemetryutil::angle_mavlink_rad_to_degree2(attitude.pitch);
+         set_roll((double)roll_deg);
+         set_pitch((double)pitch_deg);
++         //std::string str = std::to_string(pitch_deg);
+         // TODO what about yaw ?! - heading something weird is going on there
+         //const auto yaw_deg=Telemetryutil::angle_mavlink_rad_to_degree(attitude.yaw);
+         //set_hdg(yaw_deg);
+         //qDebug()<<"degree Roll:"<<roll_deg<<" Pitch:"<<pitch_deg<<" Yaw:"<<yaw_deg;
++        //qDebug()<<"degree Roll:"<<roll_deg<<" Pitch:"<<pitch_deg<<"  : "<<attitude.pitch << " : " << str.c_str();
+         m_n_attitude_messages++;
+         break;
+     }
+@@ -259,13 +261,18 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
+         break;
+     }
+     case MAVLINK_MSG_ID_RC_CHANNELS_RAW:{
+-        // Seems to be outdated
++        // Seems to be outdated - NOT, used for INAV
+         //qDebug()<<"Got message RC channels raw";
+         mavlink_rc_channels_raw_t rc_channels_raw;
+         mavlink_msg_rc_channels_raw_decode(&msg, &rc_channels_raw);
+-        //const auto tmp=Telemetryutil::mavlink_msg_rc_channels_raw_to_array(rc_channels_raw);
+-        //RCChannelsModel::instanceFC().update_all_channels(tmp);
++
++        //qDebug()<<"Channels "<<rc_channels_raw.chan1_raw<<" | "<<rc_channels_raw.chan2_raw<<" | "<<rc_channels_raw.chan3_raw<<" | "<<rc_channels_raw.chan4_raw<<" | ";
++
++        //NEEDED for INAV , tisho 
++        const auto tmp=Telemetryutil::mavlink_msg_rc_channels_raw_to_array(rc_channels_raw);
++        RCChannelsModel::instanceFC().update_all_channels(tmp);
+         set_rc_rssi_percentage( Telemetryutil::mavlink_rc_rssi_to_percent(rc_channels_raw.rssi));
++        
+         break;
+     }
+     case MAVLINK_MSG_ID_RC_CHANNELS:{
+@@ -303,7 +310,7 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
+     case MAVLINK_MSG_ID_MISSION_ITEM_INT:{
+         mavlink_mission_item_int_t item;
+         mavlink_msg_mission_item_int_decode(&msg, &item);
+-        //qDebug()<<"Got MAVLINK_MSG_ID_MISSION_ITEM_INT"<<Telemetryutil::mavlink_frame_to_string(item.frame);
++        qDebug()<<"Got MAVLINK_MSG_ID_MISSION_ITEM_INT"<<Telemetryutil::mavlink_frame_to_string(item.frame);
+         {
+            if(item.frame==MAV_FRAME_GLOBAL || item.frame==MAV_FRAME_GLOBAL_RELATIVE_ALT){
+                double lat=static_cast<double>(item.x)* 1e-7;
+diff --git a/app/telemetry/telemetryutil.hpp b/app/telemetry/telemetryutil.hpp
+index 0f68ecfb4..b7056c96c 100644
+--- a/app/telemetry/telemetryutil.hpp
++++ b/app/telemetry/telemetryutil.hpp
+@@ -348,6 +348,11 @@ static float angle_mavlink_rad_to_degree(float angle_rad){
+     return static_cast<float>(degree);
+ }
+ 
++static double angle_mavlink_rad_to_degree2(float angle_rad){
++    double degree=((double)(static_cast<double>(180.0) )/(MAVSDK_PI))* angle_rad;
++    return degree;
++}
++
+ // mavlink defines the rc rssi value commonly the following way:
+ // Receive signal strength indicator in device-dependent units/scale. Values: [0-254], UINT8_MAX: invalid/unknown.
+ // We use percent in the osd, with -1 for N/A
+-- 
+2.34.1
+
+
+From 360d8bba3d47b148a3d20137e6286cce18e2d444 Mon Sep 17 00:00:00 2001
+From: Tipo Man <tipoman9@gmail.com>
+Date: Thu, 26 Oct 2023 19:53:53 +0300
+Subject: [PATCH 2/2] Horizon ladder smooth changes
+
+---
+ app/osd/horizonladder.cpp | 12 +++++++++---
+ app/osd/horizonladder.h   |  6 +++---
+ 2 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/app/osd/horizonladder.cpp b/app/osd/horizonladder.cpp
+index f0d351667..c1654b2ce 100644
+--- a/app/osd/horizonladder.cpp
++++ b/app/osd/horizonladder.cpp
+@@ -53,8 +53,14 @@ void HorizonLadder::paint(QPainter* painter) {
+     }
+     //weird rounding issue where decimals make ladder dissappear
+     roll_degree = round(roll_degree);
+-    pitch_degree = round(pitch_degree);
+-    //qDebug()<<"Roll:"<<roll_degree<<" Pitch:"<<pitch_degree;
++    //pitch_degree = round(pitch_degree);
++
++    std::string str = std::to_string(pitch_degree);
++    qDebug()<<"Roll:"<<roll_degree<<" Pitch:"<<pitch_degree<< " : " << str.c_str();
++
++    
++
++
+ 
+     if(show_center_indicator){
+         painter->setPen(m_color);
+@@ -446,7 +452,7 @@ void HorizonLadder::setRoll(int roll) {
+ }
+ 
+ 
+-void HorizonLadder::setPitch(int pitch) {
++void HorizonLadder::setPitch(double pitch) {
+     m_pitch = pitch;
+     emit pitchChanged(m_pitch);
+     update();
+diff --git a/app/osd/horizonladder.h b/app/osd/horizonladder.h
+index d113b7e56..af2df3385 100644
+--- a/app/osd/horizonladder.h
++++ b/app/osd/horizonladder.h
+@@ -18,7 +18,7 @@ class HorizonLadder : public QQuickPaintedItem {
+     Q_PROPERTY(int horizonRange MEMBER m_horizonRange WRITE setHorizonRange NOTIFY horizonRangeChanged)
+     Q_PROPERTY(int horizonStep MEMBER m_horizonStep WRITE setHorizonStep NOTIFY horizonStepChanged)
+     Q_PROPERTY(int roll MEMBER m_roll WRITE setRoll NOTIFY rollChanged)
+-    Q_PROPERTY(int pitch MEMBER m_pitch WRITE setPitch NOTIFY pitchChanged)
++    Q_PROPERTY(double pitch MEMBER m_pitch WRITE setPitch NOTIFY pitchChanged)
+ 
+     Q_PROPERTY(int heading MEMBER m_heading WRITE setHeading NOTIFY headingChanged)
+     Q_PROPERTY(int homeHeading MEMBER m_homeHeading WRITE setHomeHeading NOTIFY homeHeadingChanged)
+@@ -52,7 +52,7 @@ public slots:
+     void setHorizonRange(int horizonRange);
+     void setHorizonStep(int horizonStep);
+     void setRoll(int roll);
+-    void setPitch(int pitch);
++    void setPitch(double pitch);
+ 
+     void setHeading(int heading);
+     void setHomeHeading(int homeHeading);
+@@ -95,7 +95,7 @@ private:
+     int m_horizonRange;
+ 
+     int m_roll;
+-    int m_pitch;
++    double m_pitch;
+ 
+     int m_heading;
+     int m_homeHeading;
+-- 
+2.34.1
+
