@@ -37,6 +37,13 @@ ApplicationWindow {
         _qrenderstats.set_window_height(height)
     }
 
+    onWidthChanged: {
+        _qrenderstats.set_window_width(width)
+    }
+    onHeightChanged: {
+        _qrenderstats.set_window_height(height)
+    }
+
     contentOrientation: settings.general_screen_rotation===0 ? Qt.PortraitOrientation : Qt.LandscapeOrientation
     contentItem.rotation: settings.general_screen_rotation 
 
