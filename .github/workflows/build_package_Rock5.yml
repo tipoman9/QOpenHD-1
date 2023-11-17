@@ -3,10 +3,9 @@ name: build_package_rock5_debian
 on:
   push:
    branches:
-      - "2.5-evo"
+      - "rapha"
       - "dev-release"
       - "release"
-      - "rapha"
    paths-ignore:
       - '**.md'
       - '**.asciidoc'
