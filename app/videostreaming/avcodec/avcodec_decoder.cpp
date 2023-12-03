@@ -966,10 +966,12 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
              wanted_hw_pix_fmt = AV_PIX_FMT_DRM_PRIME;
              use_pi_hw_decode=true;
 
-             //To Do . Need a switch to enable HW decode with intel
-             bool rrr = settingsEx.value("dev_limit_fps_on_test_file",false).toBool();
+             //To Do . Need a switch to enable HW decode with intel QSV
+             bool rrr = settingsEx.value("qopenhd_primary_video_force_sw",false).toBool();
              const AVCodec* hevc_qsv = avcodec_find_decoder_by_name("hevc_qsv");
-             if ((true) && hevc_qsv!=NULL){
+             bool no_stbc = settingsEx.value("dev_wb_show_no_stbc_enabled_warning", false).toBool();//ToDo find a config !
+             //settings.primary_stream_config.enable_software_video_decoder
+             if ((!no_stbc) && hevc_qsv!=NULL){
                  wanted_hw_pix_fmt = AV_PIX_FMT_NV12;
                  decoder=hevc_qsv;
                  IntelQSV_HW_decode=true;
@@ -1083,6 +1085,7 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
                     //saveBufferToFile("/home/home/Videos/magic_rtp.hex",pkt->data,pkt->size);
                     decode_config_data(pkt);
                     InitWithIDRFrame=1;
+                    free(pkt->data);
                 }else{//To Do, add a counter here
                     continue;
                 }

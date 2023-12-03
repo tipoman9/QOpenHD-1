@@ -6,10 +6,12 @@
 #include "../color_helper.h"
 #include <GL/gl.h>
 #include <chrono>
+#include "../../common/TimeHelper.hpp"
 
-#include <libavutil/imgutils.h>
+
 extern "C" {
 #include <libswscale/swscale.h>
+#include <libavutil/imgutils.h>
 }
 
 static EGLint texgen_attrs[] = {
@@ -275,10 +277,20 @@ void GL_VideoRenderer::update_texture_vdpau(AVFrame* hw_frame) {
 }
 
 
+int contextLastWidth=0;
+struct SwsContext *sws_ctx=NULL;
+AvgCalculator avg_decode_time{"ColorConvert"};
+bool avg_decode_timer_set=false;
 // TODO r.n we have 2 CPU copies !
 //https://registry.khronos.org/OpenGL/extensions/NV/NV_vdpau_interop.txt
 void GL_VideoRenderer::update_texture_NV12(AVFrame* frame) {
-
+    /*
+    auto beforeFeedFrame=std::chrono::steady_clock::now();
+    avg_decode_time.custom_print_in_intervals(std::chrono::seconds(3),[](const std::string name,const std::string message){
+           qDebug()<<name.c_str()<<":"<<message.c_str();
+                //DecodingStatistcs::instance().set_decode_time(message.c_str());
+    });
+   */
 
  // Allocate a YUV420P frame for conversion
     AVFrame *yuv420p_frame = av_frame_alloc();
@@ -293,15 +305,20 @@ void GL_VideoRenderer::update_texture_NV12(AVFrame* frame) {
         return;
     }
 
-  //SwsContext* conversion_context_ = sws_getContext(videoDecoder_->width(),     videoDecoder_->height(), AV_PIX_FMT_NV12 ,scaler_->getWidth(), scaler_->getHeight(), AV_PIX_FMT_YUV420P,(int)SWS_BICUBIC, nullptr, nullptr, nullptr);
-
-    // Create the conversion context
-    struct SwsContext *sws_ctx = sws_getContext(
-        frame->width, frame->height, AV_PIX_FMT_NV12,
-        frame->width, frame->height, AV_PIX_FMT_YUV420P,
-        0, NULL, NULL, NULL
-    );
-
+    if (sws_ctx!=NULL && contextLastWidth!=frame->width){//Video size changed
+        sws_freeContext(sws_ctx);
+        sws_ctx=NULL;//Must be recreated
+    }
+    // Create the conversion context, will be released on exit?
+    if (sws_ctx==NULL){
+        qDebug()<<"Conversion context SWSContext created.";
+        sws_ctx = sws_getContext(
+            frame->width, frame->height, AV_PIX_FMT_NV12,
+            frame->width, frame->height, AV_PIX_FMT_YUV420P,
+            0, NULL, NULL, NULL
+        );
+        contextLastWidth=frame->width;
+    }
     if (!sws_ctx) {
         fprintf(stderr, "Error creating SwsContext\n");
         av_frame_free(&yuv420p_frame);
@@ -312,10 +329,9 @@ void GL_VideoRenderer::update_texture_NV12(AVFrame* frame) {
     sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
               yuv420p_frame->data, yuv420p_frame->linesize);
 
- 
-
     // Clean up
-    sws_freeContext(sws_ctx);
+    //sws_freeContext(sws_ctx);
+
     av_frame_unref(frame);
     av_frame_copy_props(frame, yuv420p_frame);
     //av_frame_free(&yuv420p_frame);
@@ -323,6 +339,8 @@ void GL_VideoRenderer::update_texture_NV12(AVFrame* frame) {
     update_texture_yuv420P_yuv422P(yuv420p_frame);
     
 
+    //avg_decode_time.add(std::chrono::steady_clock::now()-beforeFeedFrame);
+    
   return ;
   //https://stackoverflow.com/questions/77193803/hardware-acceleration-of-color-conversion-and-scaling-using-qsv-with-ffmpeg-lib
   /*
