@@ -22,7 +22,7 @@ static int hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType type){
     ctx->hw_frames_ctx = NULL;
     // ctx->hw_device_ctx gets freed when we call avcodec_free_context
     if ((err = av_hwdevice_ctx_create(&ctx->hw_device_ctx, type,
-                                      NULL, NULL, 0)) < 0) {
+                                      /*"auto"*/ NULL , NULL, 0)) < 0) {
         fprintf(stderr, "Failed to create specified HW device.\n");
         return err;
     }
@@ -46,8 +46,31 @@ static enum AVPixelFormat get_hw_format(AVCodecContext *ctx,const enum AVPixelFo
     if(ret==AV_PIX_FMT_NONE){
       fprintf(stderr, "Failed to get HW surface format. Wanted: %s\n", av_get_pix_fmt_name(wanted_hw_pix_fmt));
     }
+        
     return ret;
 }
+
+typedef struct DecodeContext {
+    AVBufferRef *hw_device_ref;
+} DecodeContext;
+
+// https://ffmpeg.org/doxygen/trunk/doc_2examples_2qsvdec_8c_source.html
+static enum AVPixelFormat  get_qsv_format(AVCodecContext *avctx, const enum AVPixelFormat *pix_fmts){
+    while (*pix_fmts != AV_PIX_FMT_NONE) {
+        if (*pix_fmts == AV_PIX_FMT_QSV) {
+            return AV_PIX_FMT_QSV;
+            //return AV_PIX_FMT_NV12;
+            //return AV_PIX_FMT_VAAPI;AV_PIX_FMT_NV12
+        }
+        pix_fmts++;
+    }
+    fprintf(stderr, "The QSV pixel format not offered in get_format()\n");
+    return AV_PIX_FMT_NONE;
+
+}
+
+
+
 
 // For SW decode, we support YUV420 | YUV422 and their (mjpeg) abbreviates since
 // we can always copy and render these formats via OpenGL - and when we are doing SW decode
@@ -151,6 +174,7 @@ void AVCodecDecoder::constant_decode()
                 // file playback always goes via non-custom rtp parser (since it is not rtp)
                 do_custom_rtp=false;
             }
+            do_custom_rtp=true;
             if(do_custom_rtp){
                 // Does h264 and h265 custom rtp parse, but uses avcodec for decode
                 open_and_decode_until_error_custom_rtp(settings);
@@ -185,7 +209,11 @@ int AVCodecDecoder::decode_and_wait_for_frame(AVPacket *packet,std::optional<std
     const int ret_avcodec_send_packet = avcodec_send_packet(decoder_ctx, packet);
     //m_ffmpeg_dequeue_or_queue_mutex.unlock();
     if (ret_avcodec_send_packet < 0) {
-        fprintf(stderr, "Error during decoding\n");
+       // fprintf(stderr, "Error during decoding\n");
+        char errbuf[AV_ERROR_MAX_STRING_SIZE] = {0};
+        av_strerror(ret_avcodec_send_packet, errbuf, AV_ERROR_MAX_STRING_SIZE);
+        fprintf(stderr, "Error during decoding: %s\n",  errbuf);
+
         return ret_avcodec_send_packet;
     }
     // alloc output frame(s)
@@ -228,7 +256,7 @@ int AVCodecDecoder::decode_and_wait_for_frame(AVPacket *packet,std::optional<std
             // display frame
             on_new_frame(frame);
             avg_decode_time.custom_print_in_intervals(std::chrono::seconds(3),[](const std::string name,const std::string message){
-                //qDebug()<<name.c_str()<<":"<<message.c_str();
+                qDebug()<<name.c_str()<<":"<<message.c_str();
                 DecodingStatistcs::instance().set_decode_time(message.c_str());
             });
         }else if(ret==AVERROR(EAGAIN)){
@@ -385,6 +413,96 @@ void AVCodecDecoder::reset_before_decode_start()
     m_fed_timestamps_queue.clear();
 }
 
+
+
+void print_codec_parameters(AVCodecParameters *params) {
+    //AVClass *av_class = avcodec_parameters_get_class();
+    const AVOption *option = NULL;
+
+}
+
+
+void printHex(const uint8_t *data, size_t size) {
+    char* hexString = (char*)malloc((size * 2 + 1) * sizeof(char)); // Each byte represented by 2 characters, plus a null terminator
+    if (hexString == NULL) {
+        return ; // Memory allocation failed
+    }
+    for (size_t i = 0; i < size; ++i) {
+        sprintf(hexString + i * 2, "%02X", data[i]); // Convert each byte to a 2-digit hex value and store in the string
+    }
+    hexString[size * 2] = '\0'; // Null terminator to mark the end of the string
+    qDebug()<<hexString;
+    free(hexString);
+}
+
+void saveBufferToFile(const char *filename, uint8_t *buffer, size_t size) {
+    FILE *file = fopen(filename, "wb"); // Open file for writing in binary mode, overwrites existing file
+    if (file == NULL) {
+        perror("Error opening file");
+        return;
+    }
+    size_t bytes_written = fwrite(buffer, sizeof(uint8_t), size, file);
+    if (bytes_written != size) {
+        perror("Error writing to file");
+    }
+
+    fclose(file);
+}
+
+void saveBufferToFileAppend(const char *filename, uint8_t *buffer, size_t size) {
+    FILE *file = fopen(filename, "ab"); // Open file for writing in binary mode, append
+    if (file == NULL) {
+        perror("Error opening file");
+        return;
+    }
+
+    size_t bytes_written = fwrite(buffer, sizeof(uint8_t), size, file);
+    if (bytes_written != size) {
+        perror("Error writing to file");
+    }
+
+    fclose(file);
+}
+
+uint8_t* readFileToBuffer(const char *filename, int *size) {
+    FILE *file = fopen(filename, "rb"); // Open file for reading in binary mode
+    if (file == NULL) {
+        perror("Error opening file");
+        return NULL;
+    }
+
+    // Get the file size
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // Allocate memory for buffer
+    uint8_t *buffer = (uint8_t *)malloc(file_size + AV_INPUT_BUFFER_PADDING_SIZE );
+    if (buffer == NULL) {
+        fclose(file);
+        perror("Memory allocation failed");
+        return NULL;
+    }
+
+    // Read file contents into buffer
+    size_t bytes_read = fread(buffer, sizeof(uint8_t), file_size, file);
+    if (bytes_read != file_size) {
+        fclose(file);
+        free(buffer);
+        perror("Error reading file");
+        return NULL;
+    }
+
+    fclose(file);
+
+    // Set the size of the buffer if size pointer is provided
+    if (size != NULL) {
+        *size = (int)file_size;
+    }
+
+    return buffer;
+}
+
 int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoStreamConfig settings)
 {
     // this is always for primary video, unless switching is enabled
@@ -393,7 +511,7 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
         stream_config=settings.secondary_stream_config;
     }
     std::string in_filename="";
-    if(settings.generic.dev_test_video_mode==QOpenHDVideoHelper::VideoTestMode::DISABLED){
+    if(false /*settings.generic.dev_test_video_mode==QOpenHDVideoHelper::VideoTestMode::DISABLED*/){
         in_filename=QOpenHDVideoHelper::get_udp_rtp_sdp_filename(stream_config);
         //in_filename="rtp://192.168.0.1:5600";
     }else{
@@ -401,7 +519,7 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
             in_filename=settings.generic.dev_custom_pipeline;
         }else{
             // For testing, I regulary change the filename(s) and recompile
-            const bool consti_testing=false;
+            const bool consti_testing=true;
             if(consti_testing){
                 if(stream_config.video_codec==QOpenHDVideoHelper::VideoCodecH264){
                      //in_filename="/tmp/x_raw_h264.h264";
@@ -411,6 +529,10 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
                 }else if(stream_config.video_codec==QOpenHDVideoHelper::VideoCodecH265){
                       //in_filename="/tmp/x_raw_h265.h265";
                     in_filename="/home/consti10/Desktop/hello_drmprime/in/jetson_test.h265";
+                    in_filename="/home/home/Videos/h265f60.mov";
+                    in_filename="/home/home/Videos/h265f60a.h265";//annexb
+                    //in_filename="/home/home/Videos/sample1080.hevc";
+
                     //in_filename="/home/consti10/Desktop/hello_drmprime/in/Big_Buck_Bunny_1080_10s_1MB_h265.mp4";
                 }else{
                    in_filename="/home/consti10/Desktop/hello_drmprime/in/uv_640x480.mjpeg";
@@ -432,7 +554,7 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
     /*av_dict_set(&av_dictionary, "buffer_size", "212992", 0);
     av_dict_set_int(&av_dictionary,"max_delay",0,0);
     av_dict_set(&av_dictionary,"reuse_sockets","1",0);
-    av_dict_set_int(&av_dictionary, "reorder_queue_size", 0, 0);
+    av_dict_set_int(av_dictionary, "reorder_queue_size", 0, 0);
     av_dict_set_int(&av_dictionary,"network-caching",0,0);
     //
     //av_dict_set(&av_dictionary,"sync","ext",0);
@@ -489,7 +611,7 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
     int ret=0;
     // find the video stream information
 #if LIBAVFORMAT_VERSION_MAJOR < 59 || (LIBAVFORMAT_VERSION_MAJOR == 59 && LIBAVFORMAT_VERSION_MINOR == 0 && LIBAVFORMAT_VERSION_MICRO < 100)
-     ret = av_find_best_stream(input_ctx, AVMEDIA_TYPE_VIDEO, -1, -1,(AVCodec**) &decoder, 0);
+     ret = av_find_best_stream(input_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, /* (AVCodec**) &decoder */ NULL, 0);
 #else
     ret = av_find_best_stream(input_ctx, AVMEDIA_TYPE_VIDEO, -1, -1,(const AVCodec**) &decoder, 0);
 #endif
@@ -498,6 +620,11 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
         avformat_close_input(&input_ctx);
         return -1;
     }
+// TURN ON HERE
+bool UseHW=true;
+
+    decoder = UseHW ?  decoder = avcodec_find_decoder_by_name("hevc_qsv") : avcodec_find_decoder(AV_CODEC_ID_H265) ;
+
     qDebug()<<"done av_find_best_stream:"<<ret;
     const int video_stream = ret;
 
@@ -507,51 +634,18 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
       return 0;
     }
 
-    const AVHWDeviceType kAvhwDeviceType = AV_HWDEVICE_TYPE_DRM;
+    const AVHWDeviceType kAvhwDeviceType = AV_HWDEVICE_TYPE_QSV;
     //const AVHWDeviceType kAvhwDeviceType = AV_HWDEVICE_TYPE_VAAPI;
-    //const AVHWDeviceType kAvhwDeviceType = AV_HWDEVICE_TYPE_CUDA;
-    //const AVHWDeviceType kAvhwDeviceType = AV_HWDEVICE_TYPE_VDPAU;
 
     bool is_mjpeg=false;
-    if (decoder->id == AV_CODEC_ID_H264) {
-        qDebug()<<"H264 decode";
-        qDebug()<<all_hw_configs_for_this_codec(decoder).c_str();
-        if(!stream_config.enable_software_video_decoder){
-            // weird workaround needed for pi + DRM_PRIME
-            /*if ((decoder = avcodec_find_decoder_by_name("h264_v4l2m2m")) == NULL) {
-                fprintf(stderr, "Cannot find the h264 v4l2m2m decoder\n");
-                avformat_close_input(&input_ctx);
-                return -1;
-            }*/
-            auto tmp = avcodec_find_decoder_by_name("h264_mmal");
-            if(tmp!=nullptr){
-                decoder = tmp;
-                 wanted_hw_pix_fmt = AV_PIX_FMT_MMAL;
-            }else{
-                wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
-            }
-        }else{
-            wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
-            //wanted_hw_pix_fmt = AV_PIX_FMT_DRM_PRIME;
-        }
-    }
-    else if(decoder->id==AV_CODEC_ID_H265){
+    if(decoder->id==AV_CODEC_ID_H265){
         qDebug()<<"H265 decode";
         qDebug()<<all_hw_configs_for_this_codec(decoder).c_str();
-        wanted_hw_pix_fmt = AV_PIX_FMT_DRM_PRIME;
-        //wanted_hw_pix_fmt = AV_PIX_FMT_CUDA;
-        //wanted_hw_pix_fmt = AV_PIX_FMT_VAAPI;
-        //wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
-        //wanted_hw_pix_fmt = AV_PIX_FMT_VAAPI;
-        //wanted_hw_pix_fmt = AV_PIX_FMT_VDPAU;
-    }else if(decoder->id==AV_CODEC_ID_MJPEG){
-        qDebug()<<"Codec mjpeg";
-        qDebug()<<all_hw_configs_for_this_codec(decoder).c_str();
-        wanted_hw_pix_fmt=AV_PIX_FMT_YUVJ422P;
-        //wanted_hw_pix_fmt=AV_PIX_FMT_YUVJ420P;
-        //wanted_hw_pix_fmt=AV_PIX_FMT_CUDA;
         //wanted_hw_pix_fmt = AV_PIX_FMT_DRM_PRIME;
-        is_mjpeg= true;
+        //wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;//vaapi_vld(46),vdpau(100),cuda(119),yuv420p(0),
+        wanted_hw_pix_fmt = AV_PIX_FMT_NV12;
+
+        //decoder = avcodec_find_decoder_by_name("hevc_qsv");        
     }else{
         assert(true);
         avformat_close_input(&input_ctx);
@@ -564,49 +658,66 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
         return -1;
     }
 
-    // From moonlight-qt. However, on PI, this doesn't seem to make any difference, at least for H265 decode.
-    // (I never measured h264, but don't think there it is different).
     // Always request low delay decoding
-    decoder_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+   // decoder_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
     // Allow display of corrupt frames and frames missing references
-    decoder_ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
-    decoder_ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
+   // decoder_ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
+   // decoder_ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
+   // decoder_ctx->codec_id = AV_CODEC_ID_HEVC;
 
     AVStream *video = input_ctx->streams[video_stream];
+
+    //THIS IS IMPORTANT! Without it I get  Error initializing the MFX video decoder: unsupported (-3)
+    //DISABLE ONLY TO TEST!
     if (avcodec_parameters_to_context(decoder_ctx, video->codecpar) < 0){
         avformat_close_input(&input_ctx);
         return -1;
     }
 
-    std::string selected_decoding_type="?";
-    if(stream_config.enable_software_video_decoder ||
-            // for mjpeg we always use sw decode r.n, since for some reason the "fallback" to sw decode doesn't work here
-            // and also the PI cannot do HW mjpeg decode anyways at least no one bothered to fix ffmpeg for it.
-            stream_config.video_codec==QOpenHDVideoHelper::VideoCodecMJPEG
-            ){
-        qDebug()<<"User wants SW decode / mjpeg";
-        decoder_ctx->get_format  = get_sw_format;
-        selected_decoding_type="SW";
-    }else{
-        qDebug()<<"Try HW decode";
-        decoder_ctx->get_format  = get_hw_format;
-        if (hw_decoder_init(decoder_ctx, kAvhwDeviceType) < 0){
+    //decoder_ctx->extradata=video->codecpar->extradata;
+    //decoder_ctx->extradata_size=video->codecpar->extradata_size;
+/*
+    decoder_ctx->extradata = (uint8_t*) malloc(video->codecpar->extradata_size * sizeof(uint8_t));
+    memcpy(decoder_ctx->extradata, video->codecpar->extradata, video->codecpar->extradata_size);
+    decoder_ctx->extradata_size=video->codecpar->extradata_size;
+    printHex(decoder_ctx->extradata,decoder_ctx->extradata_size);
+*/
+    //saveBufferToFile("/home/home/Videos/extra.hex",decoder_ctx->extradata,decoder_ctx->extradata_size);
+
+    //Custom preset
+    //decoder_ctx->extradata = readFileToBuffer("/home/home/Videos/rtp_cfg.hex",&decoder_ctx->extradata_size);
+    printHex(decoder_ctx->extradata,decoder_ctx->extradata_size);
+
+    //decoder_ctx->pix_fmt = AVPixelFormat.PIX_FMT_YUV420P;
+    //decoder_ctx->flags2 |= 0x00008000;//CODEC_FLAG2_CHUNKS
+
+    //Try to set params manually
+    /*
+    decoder_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
+    decoder_ctx->width=1920;
+    decoder_ctx->height=1080;
+    decoder_ctx->profile=1;
+    decoder_ctx->level=150;
+    decoder_ctx->chroma_sample_location = AVCHROMA_LOC_LEFT;
+    decoder_ctx->color_range=AVCOL_RANGE_MPEG;
+    */
+    print_codec_parameters(video->codecpar);
+
+    std::string selected_decoding_type="?";    
+
+    decoder_ctx->get_format  = UseHW ? get_qsv_format : get_sw_format; //get_qsv_format ; //get_hw_format; // get_qsv_format ; //get_sw_format;
+    if (hw_decoder_init(decoder_ctx, kAvhwDeviceType) < 0){
           qDebug()<<"HW decoder init failed,fallback to SW decode";
           selected_decoding_type="SW(HW failed)";
-          // Use SW decode as fallback ?!
-          //return -1;
-          // H264 and H265 sw decode is always YUV420P, MJPEG seems to be always YUVJ422P;
-          if(is_mjpeg){
-            wanted_hw_pix_fmt=AV_PIX_FMT_YUVJ422P;
-          }
-          wanted_hw_pix_fmt=AV_PIX_FMT_YUV420P;
+
+          wanted_hw_pix_fmt= AV_PIX_FMT_YUV420P;
         }else{
             selected_decoding_type="HW";
-        }
-    }
-
+        }   
     // A thread count of 1 reduces latency for both SW and HW decode
-    decoder_ctx->thread_count = 1;
+    //decoder_ctx->thread_count = 1;
+
+    av_log_set_level(AV_LOG_TRACE);
 
    if ((ret = avcodec_open2(decoder_ctx, decoder, nullptr)) < 0) {
         qDebug()<<"Failed to open codec for stream ";//<< video_stream;
@@ -620,12 +731,117 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
     auto lastFrame=std::chrono::steady_clock::now();
     reset_before_decode_start();
     DecodingStatistcs::instance().set_decoding_type(selected_decoding_type.c_str());
+
+
+    bool UseRTP=true;
+    AVPacket *pkt;
+    AVCodecParserContext *parser;
+    if (UseRTP){
+
+        parser = av_parser_init(decoder->id);
+        if (!parser) {
+            fprintf(stderr, "parser not found\n");
+            //exit(1);
+        }
+
+        if(settings.generic.qopenhd_switch_primary_secondary)
+            stream_config=settings.secondary_stream_config;    
+        // This thread pulls frame(s) from the rtp decoder and therefore should have high priority
+        SchedulingHelper::setThreadParamsMaxRealtime();
+        pkt=av_packet_alloc();
+        assert(pkt!=nullptr);
+        qDebug()<<"AVCodecDecoder::open_and_decode_until_error_custom_rtp()-begin loop";
+        m_rtp_receiver=std::make_unique<RTPReceiver>(stream_config.udp_rtp_input_port,stream_config.udp_rtp_input_ip_address,stream_config.video_codec==1,settings.generic.dev_feed_incomplete_frames_to_decoder);
+        reset_before_decode_start();
+    }
+    bool has_keyframe_data=false;
+    bool StartWithIDRFrameOnly=false;
     while (ret >= 0) {
         if(request_restart){
             request_restart=false;
             // Since we do streaming and SPS/PPS come in regular intervals, we can just cancel and restart at any time.
             break;
         }
+
+        //if (nFeedFrames%240==1)
+        //    UseRTP=!UseRTP;
+
+        if (UseRTP && ((nFeedFrames/240)%2==0)){
+            std::shared_ptr<std::vector<uint8_t>> keyframe_buf;
+            if(!has_keyframe_data){
+                keyframe_buf=m_rtp_receiver->get_config_data();
+                if(keyframe_buf==nullptr){
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    continue;
+                }
+                /*
+                 Stupid Intel QSV driver needs VPS+SPS+PPS followed immediately by a an IDR Slice - otherwise it breaks and gives Unsupported(-3) error !
+                 It needs them all in one single AVPacket!!!
+                 Took me a week to discover...
+                 */
+
+                qDebug()<<"Got decode data (before keyframe)";
+
+                /*
+                pkt->data = (uint8_t*) malloc(keyframe_buf->size() + AV_INPUT_BUFFER_PADDING_SIZE);
+                memcpy(pkt->data, keyframe_buf->data(), keyframe_buf->size());
+                pkt->data=keyframe_buf->data();
+                pkt->size=keyframe_buf->size();
+                printHex(pkt->data , pkt->size);
+                */
+                saveBufferToFile("/home/home/Videos/rtp_cfg.hex",keyframe_buf->data(),keyframe_buf->size());
+
+                //decode_config_data(pkt);
+                has_keyframe_data=true;
+                StartWithIDRFrameOnly=true;
+                //continue;
+            }
+
+
+            auto buf =m_rtp_receiver->get_next_frame(std::chrono::milliseconds(kDefaultFrameTimeout));
+            if(buf==nullptr)// No buff after X seconds
+                continue;
+
+            if (StartWithIDRFrameOnly){//Stupid Intel QSV driver needs VPS+SPS+PPS followed immediately by a an IDR Slice in one AVPacket
+                if (buf->get_nal().getData()[4]==0x26 && buf->get_nal().getData()[5]==0x01){
+
+                    pkt->data = (uint8_t*) malloc(keyframe_buf->size() + buf->get_nal().getSize() + AV_INPUT_BUFFER_PADDING_SIZE);
+                    memcpy(pkt->data, keyframe_buf->data(), keyframe_buf->size()); //Video info
+
+                    memcpy(pkt->data + keyframe_buf->size() , buf->get_nal().getData(), buf->get_nal().getSize());//IDR Slice
+
+                    pkt->size=keyframe_buf->size() + buf->get_nal().getSize();
+                    printHex(pkt->data , pkt->size);
+                    saveBufferToFile("/home/home/Videos/magic_rtp.hex",pkt->data,pkt->size);
+
+                    decode_config_data(pkt);
+                    StartWithIDRFrameOnly=false;
+                }else
+                    continue;
+            }
+
+            if (false){
+                ret = av_parser_parse2(parser, decoder_ctx, &pkt->data, &pkt->size,
+                                   (uint8_t*)buf->get_nal().getData(), buf->get_nal().getSize(), AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+            }else{
+                pkt->data=(uint8_t*)buf->get_nal().getData();
+                pkt->size=buf->get_nal().getSize();
+            }
+
+            //qDebug()<<"Got "<<debug_av_packet(pkt).c_str();
+            //pkt->dts=0;
+            //pkt->duration=0;
+            //pkt->flags=0;
+            //pkt->pos=0;
+            //pkt->pts=0;
+            nFeedFrames++;
+            saveBufferToFile("/home/home/Videos/pckt_rtp.hex",pkt->data,pkt->size);
+            ret = decode_and_wait_for_frame(pkt);
+
+            ret=1;
+            continue;
+        }        
+
         if ((ret = av_read_frame(input_ctx, &packet)) < 0){
             qDebug()<<"av_read_frame returned:"<<ret<<" "<<av_error_as_string(ret).c_str();
             if(ret==-110){ //-110   Connection timed out
@@ -655,8 +871,22 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
                     }
                     lastFrame=std::chrono::steady_clock::now();
                 }
-                ret = decode_and_wait_for_frame(&packet);
+                saveBufferToFile("/home/home/Videos/pckt_file.hex",packet.data,packet.size);
+                packet.dts=0;
+                packet.duration=0;
+                packet.flags=0;
+                packet.pos=0;
+                packet.pts=0;
+
                 nFeedFrames++;
+                if (nFeedFrames==1){//Only the first frames goes in!
+                    printHex(pkt->data , (pkt->size>200)?200:pkt->size);
+                    //nFeedFrames=241;
+                    packet.size=85 + AV_INPUT_BUFFER_PADDING_SIZE;
+                }
+
+                ret = decode_and_wait_for_frame(&packet);
+
                 if(limitedFrameRate>0){
                     const uint64_t runTimeMs=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-decodingStart).count();
                     const double runTimeS=runTimeMs/1000.0f;
@@ -687,6 +917,7 @@ int AVCodecDecoder::open_and_decode_until_error(const QOpenHDVideoHelper::VideoS
 // https://ffmpeg.org/doxygen/3.3/decode_video_8c-example.html
 void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHelper::VideoStreamConfig settings)
 {
+
     // this is always for primary video, unless switching is enabled
     auto stream_config=settings.primary_stream_config;
     if(settings.generic.qopenhd_switch_primary_secondary){
@@ -700,7 +931,7 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
      if(stream_config.video_codec==QOpenHDVideoHelper::VideoCodecH264){
          decoder = avcodec_find_decoder(AV_CODEC_ID_H264);
      }else if(stream_config.video_codec==QOpenHDVideoHelper::VideoCodecH265){
-         decoder = avcodec_find_decoder(AV_CODEC_ID_H265);
+         decoder = avcodec_find_decoder(AV_CODEC_ID_H265);     
      }
      if (!decoder) {
          qDebug()<< "AVCodecDecoder::open_and_decode_until_error_custom_rtp: Codec not found";
@@ -708,6 +939,7 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
      }
      // ----------------------
      bool use_pi_hw_decode=false;
+     bool IntelQSV_HW_decode=false;
      if (decoder->id == AV_CODEC_ID_H264) {
          qDebug()<<"H264 decode";
          qDebug()<<all_hw_configs_for_this_codec(decoder).c_str();
@@ -724,16 +956,31 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
              wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
          }
      }else if(decoder->id==AV_CODEC_ID_H265){
-         qDebug()<<"H265 decode";
-         if(!stream_config.enable_software_video_decoder){
+          qDebug()<<"H265 decode";
+          QSettings settingsEx;
+
+          bool aaa = settingsEx.value("enable_software_video_decoder",false).toBool();
+          if(  !stream_config.enable_software_video_decoder){ // enable_software_video_decoder never set?
              qDebug()<<all_hw_configs_for_this_codec(decoder).c_str();
              // HW format used by rpi h265 HW decoder
              wanted_hw_pix_fmt = AV_PIX_FMT_DRM_PRIME;
              use_pi_hw_decode=true;
+
+             //To Do . Need a switch to enable HW decode with intel
+             bool rrr = settingsEx.value("dev_limit_fps_on_test_file",false).toBool();
+             const AVCodec* hevc_qsv = avcodec_find_decoder_by_name("hevc_qsv");
+             if ((true) && hevc_qsv!=NULL){
+                 wanted_hw_pix_fmt = AV_PIX_FMT_NV12;
+                 decoder=hevc_qsv;
+                 IntelQSV_HW_decode=true;
+                 qDebug()<<"AVCodecDecoder::Intel HW decoding available.";
+             }
          }else{
 
          }
      }
+
+
      // ------------------------------------
      decoder_ctx = avcodec_alloc_context3(decoder);
      if (!decoder_ctx) {
@@ -745,15 +992,19 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
     // (I never measured h264, but don't think there it is different).
     // Always request low delay decoding
     decoder_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    //decoder_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     // Allow display of corrupt frames and frames missing references
     decoder_ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
     decoder_ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
     // --------------------------------------
+
+
     // --------------------------------------
     std::string selected_decoding_type="?";
+     
     if(use_pi_hw_decode){
-        decoder_ctx->get_format  = get_hw_format;
-        if (hw_decoder_init(decoder_ctx, AV_HWDEVICE_TYPE_DRM) < 0){
+        decoder_ctx->get_format  = IntelQSV_HW_decode ? get_qsv_format:get_hw_format;
+        if (hw_decoder_init(decoder_ctx, IntelQSV_HW_decode ? AV_HWDEVICE_TYPE_QSV : AV_HWDEVICE_TYPE_DRM) < 0){  //Enable Intel QSV HW Decode
           qDebug()<<"HW decoder init failed,fallback to SW decode";
           selected_decoding_type="SW(HW failed)";
           assert(true);
@@ -761,11 +1012,12 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
             selected_decoding_type="HW";
         }
     }else{
+        decoder_ctx->get_format  = get_hw_format;//this is SW decoding
         selected_decoding_type="SW";
     }
-    // A thread count of 1 reduces latency for both SW and HW decode
-    decoder_ctx->thread_count = 1;
-
+    // A thread count of 1 reduces latency for both SW and HW decode, for HW Intel it is controlled by the driver
+    decoder_ctx->thread_count = IntelQSV_HW_decode ? 0 : 1;
+    av_log_set_level(AV_LOG_TRACE);
     // ---------------------------------------
 
      if (avcodec_open2(decoder_ctx, decoder, NULL) < 0) {
@@ -775,6 +1027,256 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
      }
      qDebug()<<"AVCodecDecoder::open_and_decode_until_error_custom_rtp()-begin loop";
      m_rtp_receiver=std::make_unique<RTPReceiver>(stream_config.udp_rtp_input_port,stream_config.udp_rtp_input_ip_address,stream_config.video_codec==1,settings.generic.dev_feed_incomplete_frames_to_decoder);
+
+     reset_before_decode_start();
+     DecodingStatistcs::instance().set_decoding_type(selected_decoding_type.c_str());
+     AVPacket *pkt=av_packet_alloc();
+     assert(pkt!=nullptr);
+     bool has_keyframe_data=false;
+     int InitWithIDRFrame=IntelQSV_HW_decode?1:0;
+     std::shared_ptr<std::vector<uint8_t>> keyframe_buf;
+
+     while(true){
+         // We break out of this loop if someone requested a restart
+         if(request_restart){
+             request_restart=false;
+             goto finish;
+         }
+         // or the decode config changed and we need a restart
+         if(m_rtp_receiver->config_has_changed_during_decode){
+             qDebug()<<"Break/Restart,config has changed during decode";
+             goto finish;
+         }
+         //std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+
+         if(!has_keyframe_data){
+              keyframe_buf=m_rtp_receiver->get_config_data();
+              if(keyframe_buf==nullptr){
+                  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                  continue;
+              }
+              has_keyframe_data=true;
+              if (InitWithIDRFrame>0){
+                    InitWithIDRFrame=2;
+              }else{
+                qDebug()<<"Got decode data (before keyframe)";
+                pkt->data=keyframe_buf->data();
+                pkt->size=keyframe_buf->size();
+                decode_config_data(pkt);
+
+                continue;
+              }
+         }else{             
+             auto buf =m_rtp_receiver->get_next_frame(std::chrono::milliseconds(kDefaultFrameTimeout));
+             if(buf==nullptr){
+                 // No buff after X seconds
+                 continue;
+             }
+             if(InitWithIDRFrame==2){//Stupid Intel QSV driver needs VPS+SPS+PPS followed immediately by a IDR Slice in ONE AVPacket
+                 if ((buf->get_nal().getData()[4]==0x26 && buf->get_nal().getData()[5]==0x01) || // the prefix is 00 00 00 01
+                     (buf->get_nal().getData()[3]==0x26 && buf->get_nal().getData()[4]==0x01)//the prefix can be 00 00 01                 
+                 ){//is this an IDR frame? Stick them together
+                    pkt->data = (uint8_t*) malloc(keyframe_buf->size() + buf->get_nal().getSize() + AV_INPUT_BUFFER_PADDING_SIZE);
+                    memcpy(pkt->data, keyframe_buf->data(), keyframe_buf->size()); //Video info
+                    memcpy(pkt->data + keyframe_buf->size() , buf->get_nal().getData(), buf->get_nal().getSize());//IDR Slice
+                    pkt->size=keyframe_buf->size() + buf->get_nal().getSize();                    
+                    //saveBufferToFile("/home/home/Videos/magic_rtp.hex",pkt->data,pkt->size);
+                    decode_config_data(pkt);
+                    InitWithIDRFrame=1;
+                }else{//To Do, add a counter here
+                    continue;
+                }
+             }
+
+             //qDebug()<<"Got decode data (after keyframe)";
+            pkt->data=(uint8_t*)buf->get_nal().getData();
+            pkt->size=buf->get_nal().getSize();
+            decode_and_wait_for_frame(pkt,buf->get_nal().creationTime);
+             //fetch_frame_or_feed_input_packet();
+         }
+     }
+finish:
+     qDebug()<<"AVCodecDecoder::open_and_decode_until_error_custom_rtp()-end loop";
+     m_rtp_receiver=nullptr;
+     avcodec_free_context(&decoder_ctx);
+}
+
+
+// Test for Hardware decoding
+void AVCodecDecoder::open_and_decode_until_error_testHW(const QOpenHDVideoHelper::VideoStreamConfig settings)
+{
+        std::string selected_decoding_type="?";
+    // this is always for primary video, unless switching is enabled
+    auto stream_config=settings.primary_stream_config;
+    if(settings.generic.qopenhd_switch_primary_secondary){
+        stream_config=settings.secondary_stream_config;
+    }
+
+      
+//--------------vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv------------------
+    enum AVHWDeviceType type;
+    AVBufferRef *hw_device_ctx = NULL;
+    int i;
+
+/*
+Available HW :  vdpau
+Available HW :  cuda
+Available HW :  vaapi
+Available HW :  qsv
+Available HW :  drm
+Available HW :  opencl
+*/
+
+/*
+    type = av_hwdevice_find_type_by_name("vaapi");
+    //type = av_hwdevice_find_type_by_name("qsv");
+    if (type == AV_HWDEVICE_TYPE_NONE) {        
+        while((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE)
+             qDebug()<<"Available HW : " << av_hwdevice_get_type_name(type);
+        //fprintf(stderr, "\n");
+        qDebug()<< "ErrorHW:"<<stderr;        
+    }else{
+        qDebug()<< "get HW success for type: "<<av_hwdevice_get_type_name(type);
+    }
+*/    
+//--------------^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------------
+
+    // This thread pulls frame(s) from the rtp decoder and therefore should have high priority
+    SchedulingHelper::setThreadParamsMaxRealtime();
+    av_log_set_level(AV_LOG_TRACE);
+    
+   /*
+        qDebug()<< "AVCodecDecoder::avcodec_find_decoder";
+        // decoder = avcodec_find_decoder(AV_CODEC_ID_H265);
+        decoder = avcodec_find_decoder_by_name("hevc_qsv");
+        if (!decoder) 
+            qDebug()<<"The QSV decoder is not present in libavcodec";        
+        else
+            qDebug()<<"The hevc_qsv is  present!"; 
+        for (i = 0;; i++) {
+            const AVCodecHWConfig *config = avcodec_get_hw_config(decoder, i);
+            if (!config) {
+                qDebug()<<"Decoder " <<decoder->name<< " does not support device type " << av_hwdevice_get_type_name(type);
+                break;
+            }
+            if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+                config->device_type == type) {
+                qDebug()<<"HW Decoder " <<decoder->name<< " chosen . " ;
+                //hw_pix_fmt = config->pix_fmt;
+                break;
+            }
+        }
+   */             
+            //wanted_hw_pix_fmt = AV_PIX_FMT_VDPAU;
+            //Supported (HW) pixel formats for qsv 
+            // qsv(116),nv12(23)
+            wanted_hw_pix_fmt = AV_PIX_FMT_NV12;
+
+            //wanted_hw_pix_fmt = AV_PIX_FMT_QSV;
+            //wanted_hw_pix_fmt = AV_PIX_FMT_YUV420P;
+
+/*
+    ---- TEST ---- Tisho 2023
+*/
+
+ // Find video stream and decoder
+    /* open the input file */
+     
+    AVStream *video = NULL;
+    int video_stream=0;
+
+     const AVCodec *decoder = NULL;
+
+
+    int ret;
+    AVFormatContext *input_ctx = NULL;
+
+    ret = av_hwdevice_ctx_create(&hw_device_ctx, AV_HWDEVICE_TYPE_QSV, "auto" /*NULL*/, NULL, 0);
+     if (ret < 0) {
+         //fprintf(stderr, "Failed to create a QSV device. Error code: %s\n", av_err2str(ret));
+         return;
+     }
+
+
+    AVDictionary* av_dictionary=nullptr;
+    av_dict_set(&av_dictionary, "protocol_whitelist", "udp,file,hevc,rtp,crypto", 0);
+     //const AVInputFormat* format = av_find_input_format("sdp");
+      auto format = av_find_input_format("sdp");
+    if (avformat_open_input(&input_ctx,"/home/home/Videos/60a.sdp", format, &av_dictionary) != 0) {
+              return;
+    }
+
+    if (avformat_find_stream_info(input_ctx, NULL) < 0) {
+        qDebug()<< "Cannot find input stream information.";
+        avformat_close_input(&input_ctx);
+        return ;
+    }
+    /* find the video stream information */
+    
+    ret = av_find_best_stream(input_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
+    if (ret < 0) {
+        fprintf(stderr, "Cannot find a video stream in the input file\n");
+        goto fin;
+    }    
+
+     video_stream = ret;
+     video = input_ctx->streams[video_stream];
+
+      decoder = avcodec_find_decoder_by_name("hevc_qsv");
+     //decoder = avcodec_find_decoder(video->codecpar->codec_id);
+
+/*
+    for (i = 0;; i++) {
+        const AVCodecHWConfig *config = avcodec_get_hw_config(decoder, i);
+        if (!config) {
+            fprintf(stderr, "Decoder %s does not support device type %s.\n",
+                    decoder->name, av_hwdevice_get_type_name(type));
+           goto fin;
+        }
+        if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+            config->device_type == type) {
+            //hw_pix_fmt = config->pix_fmt;
+            break;
+        }
+    }
+*/  
+    fin:
+// ----------------^^^^^^^^^ Find video stream and decoder ^^^^^^^^^^^-------------
+
+     if (!(decoder_ctx = avcodec_alloc_context3(decoder))){                
+         qDebug()<< "AVCodecDecoder::open_and_decode_until_error_custom_rtp: Could not allocate video codec context";
+         return;
+     }
+
+     /*
+    decoder_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    decoder_ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
+    decoder_ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
+*/
+
+    //if ((ret = avcodec_parameters_to_context(decoder_ctx, video->codecpar)) < 0) {
+       //  fprintf(stderr, "avcodec_parameters_to_context error. Error code: %s\n", av_err2str(ret));
+     //   return ;
+    // }
+     decoder_ctx->framerate = av_guess_frame_rate(input_ctx, video, NULL);
+    decoder_ctx->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+ 
+     if (!decoder_ctx->hw_device_ctx) {
+         fprintf(stderr, "A hardware device reference create failed.\n");
+         return ;//AVERROR(ENOMEM);
+     }
+     decoder_ctx->get_format    = get_hw_format;
+     decoder_ctx->pkt_timebase = video->time_base;
+
+    //av_dump_format(input_ctx , 0, "/home/home/Videos/15Mbit.mov", 0);
+    decoder_ctx->codec_id = AV_CODEC_ID_HEVC;
+     if ((ret = avcodec_open2(decoder_ctx, decoder, NULL)) < 0){
+         fprintf(stderr, "Failed to open codec for decoding. Error code: %d\n", ret);  
+         return ;
+    }
+
+     qDebug()<<"AVCodecDecoder::open_and_decode_until_error_custom_rtp()-begin loop";
+     m_rtp_receiver=std::make_unique<RTPReceiver>(stream_config.udp_rtp_input_port,stream_config.udp_rtp_input_ip_address,stream_config.video_codec==1,settings.generic.dev_feed_incomplete_frames_to_decoder);    
 
      reset_before_decode_start();
      DecodingStatistcs::instance().set_decoding_type(selected_decoding_type.c_str());
@@ -823,6 +1325,8 @@ finish:
      m_rtp_receiver=nullptr;
      avcodec_free_context(&decoder_ctx);
 }
+
+
 
 void AVCodecDecoder::timestamp_add_fed(int64_t ts)
 {

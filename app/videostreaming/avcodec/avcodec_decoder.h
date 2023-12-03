@@ -101,6 +101,10 @@ private:
     // AND always goes the avcodec decode route (SW decode or avcodec mmal decode).
     // Used for SW decode, for MMAL h264 we go the custom rtp WITHOUT avcodec route by default !
     void open_and_decode_until_error_custom_rtp(const QOpenHDVideoHelper::VideoStreamConfig settings);
+
+    //tipoman test
+    void open_and_decode_until_error_testHW(const QOpenHDVideoHelper::VideoStreamConfig settings);
+    
     bool feed_rtp_frame_if_available();
 private:
     void reset_before_decode_start();

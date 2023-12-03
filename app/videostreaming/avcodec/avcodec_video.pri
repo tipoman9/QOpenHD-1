@@ -1,6 +1,6 @@
 INCLUDEPATH += $$PWD
 
-LIBS += -lavcodec -lavutil -lavformat
+LIBS += -lavcodec -lavutil -lswscale -lavformat
 # TODO dirty
 LIBS += -lGLESv2 -lEGL
 

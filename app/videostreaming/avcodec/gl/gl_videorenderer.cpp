@@ -7,6 +7,11 @@
 #include <GL/gl.h>
 #include <chrono>
 
+#include <libavutil/imgutils.h>
+extern "C" {
+#include <libswscale/swscale.h>
+}
+
 static EGLint texgen_attrs[] = {
 	EGL_DMA_BUF_PLANE0_FD_EXT,
 	EGL_DMA_BUF_PLANE0_OFFSET_EXT,
@@ -269,6 +274,73 @@ void GL_VideoRenderer::update_texture_vdpau(AVFrame* hw_frame) {
   av_frame_free(&hw_frame);
 }
 
+
+// TODO r.n we have 2 CPU copies !
+//https://registry.khronos.org/OpenGL/extensions/NV/NV_vdpau_interop.txt
+void GL_VideoRenderer::update_texture_NV12(AVFrame* frame) {
+
+
+ // Allocate a YUV420P frame for conversion
+    AVFrame *yuv420p_frame = av_frame_alloc();
+    yuv420p_frame->format = AV_PIX_FMT_YUV420P;
+    yuv420p_frame->width = frame->width;
+    yuv420p_frame->height = frame->height;
+
+    // Allocate memory for the new frame
+    if (av_frame_get_buffer(yuv420p_frame, 32) < 0) {
+        fprintf(stderr, "Error allocating frame buffer\n");
+        av_frame_free(&yuv420p_frame);
+        return;
+    }
+
+  //SwsContext* conversion_context_ = sws_getContext(videoDecoder_->width(),     videoDecoder_->height(), AV_PIX_FMT_NV12 ,scaler_->getWidth(), scaler_->getHeight(), AV_PIX_FMT_YUV420P,(int)SWS_BICUBIC, nullptr, nullptr, nullptr);
+
+    // Create the conversion context
+    struct SwsContext *sws_ctx = sws_getContext(
+        frame->width, frame->height, AV_PIX_FMT_NV12,
+        frame->width, frame->height, AV_PIX_FMT_YUV420P,
+        0, NULL, NULL, NULL
+    );
+
+    if (!sws_ctx) {
+        fprintf(stderr, "Error creating SwsContext\n");
+        av_frame_free(&yuv420p_frame);
+        return;
+    }
+
+    // Perform the conversion
+    sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
+              yuv420p_frame->data, yuv420p_frame->linesize);
+
+ 
+
+    // Clean up
+    sws_freeContext(sws_ctx);
+    av_frame_unref(frame);
+    av_frame_copy_props(frame, yuv420p_frame);
+    //av_frame_free(&yuv420p_frame);
+
+    update_texture_yuv420P_yuv422P(yuv420p_frame);
+    
+
+  return ;
+  //https://stackoverflow.com/questions/77193803/hardware-acceleration-of-color-conversion-and-scaling-using-qsv-with-ffmpeg-lib
+  /*
+  //decoding frame
+  int32_t ret = avcodec_receive_frame(_context, _tmpFrame); //i got _tmpFrame->format == AV_PIX_FMT_QSV
+  //retrieve data from GPU to CPU
+  av_hwframe_transfer_data(_decFrame, _tmpFrame, 0); //i got _decFrame->format == AV_PIX_FMT_NV12
+  //...some code next
+  //init context
+  conversion = sws_getContext(_context->width, _context->height, AV_PIX_FMT_NV12,
+                             _context->width,_context->height, AV_PIX_FMT_YUV420P,
+                             SWS_FAST_BILINEAR, NULL,NULL,NULL);
+  //convert frame  (is Intel QuickSync used here)?
+  int32_t out_height = sws_scale(conversion, src_data, src_stride, 0, src_height, dst_data, dst_stride);
+  */
+
+}
+
 // "Consumes" the given hw_frame (makes sure it is freed at the apropriate time / the previous one
 // is freed when updating to a new one.
 void GL_VideoRenderer::update_texture_gl(AVFrame *frame) {
@@ -290,6 +362,10 @@ void GL_VideoRenderer::update_texture_gl(AVFrame *frame) {
   }else if(frame->format==AV_PIX_FMT_VDPAU){
     //std::cout<<"update_texture_vdpau\n";
 	update_texture_vdpau(frame);
+  
+  }else if(frame->format==AV_PIX_FMT_NV12){
+    //std::cout<<"update_texture_vdpau\n";
+	update_texture_NV12(frame);
   }
   else{
 	std::cerr << "Unimplemented to texture:" << safe_av_get_pix_fmt_name((AVPixelFormat)frame->format) << "\n";

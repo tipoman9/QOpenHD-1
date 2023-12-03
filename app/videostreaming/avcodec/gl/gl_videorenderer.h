@@ -69,6 +69,7 @@ class GL_VideoRenderer {
   void update_texture_cuda(AVFrame* frame);
   void update_texture_yuv420P_yuv422P(AVFrame* frame);
   void update_texture_vdpau(AVFrame* frame);
+  void update_texture_NV12(AVFrame* frame);
 #ifdef X_HAS_LIB_CUDA
   std::unique_ptr<CUDAGLInteropHelper> m_cuda_gl_interop_helper=nullptr;
 #endif
