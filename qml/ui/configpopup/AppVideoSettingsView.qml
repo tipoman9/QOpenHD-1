@@ -63,7 +63,7 @@ ScrollView {
             }
             SettingBaseElement{
                 m_short_description: "Primary video force SW"
-                m_long_description: "Force SW decode for primary video stream (unless it already defaulted to sw decode). Can fix bug(s) in rare hardware incompability cases."
+                m_long_description: "Force SW decode for primary video stream (unless it is already defaulted to sw decode). Can fix bug(s) in rare hardware incompability cases."
                 Switch {
                     width: 32
                     height: elementHeight

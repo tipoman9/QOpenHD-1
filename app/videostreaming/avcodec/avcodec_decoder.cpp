@@ -212,7 +212,7 @@ int AVCodecDecoder::decode_and_wait_for_frame(AVPacket *packet,std::optional<std
        // fprintf(stderr, "Error during decoding\n");
         char errbuf[AV_ERROR_MAX_STRING_SIZE] = {0};
         av_strerror(ret_avcodec_send_packet, errbuf, AV_ERROR_MAX_STRING_SIZE);
-        fprintf(stderr, "Error during decoding: %s\n",  errbuf);
+        fprintf(stderr, "Error during decoding: %s  (%d) \n",  errbuf, ret_avcodec_send_packet);
 
         return ret_avcodec_send_packet;
     }
@@ -996,8 +996,8 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
     decoder_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
     //decoder_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     // Allow display of corrupt frames and frames missing references
-    decoder_ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
-    decoder_ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
+    //decoder_ctx->flags |= AV_CODEC_FLAG_OUTPUT_CORRUPT;
+    //decoder_ctx->flags2 |= AV_CODEC_FLAG2_SHOW_ALL;
     // --------------------------------------
 
 
@@ -1037,6 +1037,8 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
      bool has_keyframe_data=false;
      int InitWithIDRFrame=IntelQSV_HW_decode?1:0;
      std::shared_ptr<std::vector<uint8_t>> keyframe_buf;
+     int decode_result=0;
+     uint64_t pckt_ttl=0;
 
      while(true){
          // We break out of this loop if someone requested a restart
@@ -1083,7 +1085,11 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
                     memcpy(pkt->data + keyframe_buf->size() , buf->get_nal().getData(), buf->get_nal().getSize());//IDR Slice
                     pkt->size=keyframe_buf->size() + buf->get_nal().getSize();                    
                     //saveBufferToFile("/home/home/Videos/magic_rtp.hex",pkt->data,pkt->size);
-                    decode_config_data(pkt);
+
+                    //this will only send the data, but now we have and IDR frame inside and need to keep it
+                    //decode_config_data(pkt);
+                    decode_and_wait_for_frame(pkt,buf->get_nal().creationTime);
+
                     InitWithIDRFrame=1;
                     free(pkt->data);
                 }else{//To Do, add a counter here
@@ -1094,7 +1100,19 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
              //qDebug()<<"Got decode data (after keyframe)";
             pkt->data=(uint8_t*)buf->get_nal().getData();
             pkt->size=buf->get_nal().getSize();
-            decode_and_wait_for_frame(pkt,buf->get_nal().creationTime);
+            decode_result=decode_and_wait_for_frame(pkt,buf->get_nal().creationTime);
+
+            if (decode_result<0 && IntelQSV_HW_decode==1 ){//Intel QSV decoder stops decoding after some time with: unknown error (-21) , let try to make it work
+                //attempt restart.              
+                goto finish;//
+            }
+            //this will try to resend stream info at intervals
+            if((pckt_ttl++)%97==1234123 && InitWithIDRFrame==1){////Intel QSV decoder stops decoding after some time, let try to make it work
+                //refresh decoder video info
+                has_keyframe_data=false;
+                InitWithIDRFrame=2;
+            }
+
              //fetch_frame_or_feed_input_packet();
          }
      }

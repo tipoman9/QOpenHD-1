@@ -137,7 +137,7 @@ static VideoStreamConfigXX read_from_settingsXX(bool is_primary){
         _videoStreamConfig.udp_rtp_input_ip_address=settings.value("qopenhd_primary_video_rtp_input_ip",kDefault_udp_rtp_input_ip_address).toString().toStdString();
         const int tmp_video_codec = settings.value("qopenhd_primary_video_codec", 0).toInt();
         _videoStreamConfig.video_codec=QOpenHDVideoHelper::intToVideoCodec(tmp_video_codec);
-        _videoStreamConfig.enable_software_video_decoder=settings.value(" qopenhd_primary_video_force_sw", 0).toBool();
+        _videoStreamConfig.enable_software_video_decoder=settings.value("qopenhd_primary_video_force_sw", 0).toBool();
     }else{
         _videoStreamConfig.udp_rtp_input_port=settings.value("qopenhd_secondary_video_rtp_input_port", kDefault_udp_rtp_input_port_secondary).toInt();
         _videoStreamConfig.udp_rtp_input_ip_address=settings.value("qopenhd_secondary_video_rtp_input_ip",kDefault_udp_rtp_input_ip_address).toString().toStdString();

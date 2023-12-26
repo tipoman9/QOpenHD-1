@@ -54,6 +54,8 @@ void GL_VideoRenderer::init_gl() {
   gl_shaders->initialize();
 }
 
+AVFrame *yuv420p_frame=NULL;
+
 // https://stackoverflow.com/questions/9413845/ffmpeg-avframe-to-opengl-texture-without-yuv-to-rgb-soft-conversion
 // https://bugfreeblog.duckdns.org/2022/01/yuv420p-opengl-shader-conversion.html
 // https://stackoverflow.com/questions/30191911/is-it-possible-to-draw-yuv422-and-yuv420-texture-using-opengl
@@ -128,7 +130,10 @@ void GL_VideoRenderer::update_texture_yuv420P_yuv422P(AVFrame* frame) {
   GL_shaders::checkGlError("upload YUV420P");
   yuv_420_p_sw_frame_texture.has_valid_image= true;
   //std::cout<<"Colorspace:"<<av_color_space_name(frame->colorspace)<<"\n";
-  av_frame_free(&frame);
+
+  if (yuv420p_frame==NULL)
+        av_frame_free(&frame);
+
   GL_shaders::checkGlError("upload YUV420P");
 }
 
@@ -278,8 +283,12 @@ void GL_VideoRenderer::update_texture_vdpau(AVFrame* hw_frame) {
 
 
 int contextLastWidth=0;
+
 struct SwsContext *sws_ctx=NULL;
+
+
 AvgCalculator avg_decode_time{"ColorConvert"};
+
 bool avg_decode_timer_set=false;
 // TODO r.n we have 2 CPU copies !
 //https://registry.khronos.org/OpenGL/extensions/NV/NV_vdpau_interop.txt
@@ -290,28 +299,35 @@ void GL_VideoRenderer::update_texture_NV12(AVFrame* frame) {
            qDebug()<<name.c_str()<<":"<<message.c_str();
                 //DecodingStatistcs::instance().set_decode_time(message.c_str());
     });
-   */
+   */  
 
- // Allocate a YUV420P frame for conversion
-    AVFrame *yuv420p_frame = av_frame_alloc();
-    yuv420p_frame->format = AV_PIX_FMT_YUV420P;
-    yuv420p_frame->width = frame->width;
-    yuv420p_frame->height = frame->height;
-
-    // Allocate memory for the new frame
-    if (av_frame_get_buffer(yuv420p_frame, 32) < 0) {
-        fprintf(stderr, "Error allocating frame buffer\n");
-        av_frame_free(&yuv420p_frame);
-        return;
-    }
+ 
 
     if (sws_ctx!=NULL && contextLastWidth!=frame->width){//Video size changed
         sws_freeContext(sws_ctx);
         sws_ctx=NULL;//Must be recreated
+        av_frame_free(&yuv420p_frame);
+        yuv420p_frame=NULL;
     }
+
+    if (yuv420p_frame==NULL){
+        // Allocate a YUV420P frame for conversion
+        yuv420p_frame = av_frame_alloc();
+        yuv420p_frame->format = AV_PIX_FMT_YUV420P;
+        yuv420p_frame->width = frame->width;
+        yuv420p_frame->height = frame->height;
+
+        // Allocate memory for the new frame
+        if (av_frame_get_buffer(yuv420p_frame, 32) < 0) {
+            fprintf(stderr, "Error allocating frame buffer\n");
+            av_frame_free(&yuv420p_frame);
+            return;
+        }
+    }
+
     // Create the conversion context, will be released on exit?
     if (sws_ctx==NULL){
-        qDebug()<<"Conversion context SWSContext created.";
+        qDebug()<<"Conversion context SWSContext creating.";
         sws_ctx = sws_getContext(
             frame->width, frame->height, AV_PIX_FMT_NV12,
             frame->width, frame->height, AV_PIX_FMT_YUV420P,
@@ -329,15 +345,15 @@ void GL_VideoRenderer::update_texture_NV12(AVFrame* frame) {
     sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
               yuv420p_frame->data, yuv420p_frame->linesize);
 
-    // Clean up
-    //sws_freeContext(sws_ctx);
-
-    av_frame_unref(frame);
     av_frame_copy_props(frame, yuv420p_frame);
+    //av_frame_copy_props(yuv420p_frame, frame);
     //av_frame_free(&yuv420p_frame);
 
-    update_texture_yuv420P_yuv422P(yuv420p_frame);
+    av_frame_unref(frame);
+    av_frame_free(&frame);
+
     
+    update_texture_yuv420P_yuv422P(yuv420p_frame);
 
     //avg_decode_time.add(std::chrono::steady_clock::now()-beforeFeedFrame);
     
@@ -382,10 +398,10 @@ void GL_VideoRenderer::update_texture_gl(AVFrame *frame) {
 	update_texture_vdpau(frame);
   
   }else if(frame->format==AV_PIX_FMT_NV12){
-    //std::cout<<"update_texture_vdpau\n";
+    
 	update_texture_NV12(frame);
-  }
-  else{
+
+  }else{
 	std::cerr << "Unimplemented to texture:" << safe_av_get_pix_fmt_name((AVPixelFormat)frame->format) << "\n";
 	std::cout<<all_av_hwframe_transfer_formats(frame->hw_frames_ctx);
 	av_frame_free(&frame);
