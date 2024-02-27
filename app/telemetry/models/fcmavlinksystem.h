@@ -177,6 +177,12 @@ public: // Stuff needs to be public for qt
     // (GPS) reported time
     L_RO_PROP(quint64,sys_time_unix_usec,set_sys_time_unix_usec,0);
     L_RO_PROP(QString,sys_time_unix_as_str,set_sys_time_unix_as_str,"N/A");
+
+    L_RO_PROP(int,mav_radio_status_rssi,set_mav_radio_status_rssi,0);
+    L_RO_PROP(int,mav_radio_status_snr,set_mav_radio_status_snr,0);
+    L_RO_PROP(int,mav_radio_status_lq,set_mav_radio_status_lq,0);
+    L_RO_PROP(int,mav_radio_status_power,set_mav_radio_status_power,0);
+
 public:
     void telemetryStatusMessage(QString message, int level);
     void calculate_home_distance();

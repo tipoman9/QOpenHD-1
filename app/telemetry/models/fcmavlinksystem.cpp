@@ -392,6 +392,21 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
             qDebug() << "Windmavspd: " << mav_wind.speed;*/
         break;
     }
+
+    case MAVLINK_MSG_ID_RADIO_STATUS:{//tisho
+        //qDebug()<<"Got MAVLINK_MSG_ID_RADIO_STATUS";        
+        mavlink_radio_status_t radio_status;
+        mavlink_msg_radio_status_decode(&msg,&radio_status);
+        set_mav_radio_status_rssi(radio_status.rssi);
+        set_mav_radio_status_snr(radio_status.noise);
+        set_mav_radio_status_lq(radio_status.remrssi);
+        set_mav_radio_status_power(radio_status.remnoise);
+        //set_current_rx_rssi(radio_status.rssi);
+        //set_curr_rx_packet_loss_perc(radio_status.noise);
+      
+
+        break;
+    }
     case MAVLINK_MSG_ID_BATTERY_STATUS: {
         mavlink_battery_status_t battery_status;
         mavlink_msg_battery_status_decode(&msg, &battery_status);

@@ -35,15 +35,15 @@ BaseWidget {
         if(_ohdSystemGround.tx_operating_mode==2){
             return "LISTEN ONLY";
         }
-        return ("Loss: " + _ohdSystemAir.curr_rx_packet_loss_perc+"%")
+        return ("S.N.R: " + _fcMavlinkSystem.mav_radio_status_snr+"")
     }
 
     function get_text_dbm(){
-        var dbm=_ohdSystemAir.current_rx_rssi;
+        var dbm =256 - _fcMavlinkSystem.mav_radio_status_rssi;
         if(dbm<=-127){
             return "N/A";
         }
-        return ""+dbm;
+        return "-"+dbm;
     }
     function get_dbm_text_color(){
         var warning_level=_ohdSystemAir.dbm_too_low_warning;
@@ -158,7 +158,7 @@ BaseWidget {
             anchors.top: parent.top
             anchors.topMargin: 0
             font.family: "Font Awesome 5 Free"
-            font.pixelSize: 18
+            font.pixelSize: 16
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: Text.AlignRight
             style: Text.Outline
@@ -175,7 +175,7 @@ BaseWidget {
             anchors.leftMargin: 3
             anchors.top: parent.top
             horizontalAlignment: Text.AlignRight
-            font.pixelSize: 18
+            font.pixelSize: 16
             font.family: settings.font_text
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.NoWrap
@@ -213,6 +213,33 @@ BaseWidget {
                 text: get_text_loss()
                 color: settings.color_text
                 verticalAlignment: Text.AlignVCenter
+                font.pixelSize: 16
+                font.family: settings.font_text
+                horizontalAlignment: Text.AlignLeft
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
+                style: Text.Outline
+                styleColor: settings.color_glow
+            }
+            Text {
+                visible: true
+                  text: "LQ: " + _fcMavlinkSystem.mav_radio_status_lq+ "%";
+                color: settings.color_text
+                verticalAlignment: Text.AlignVCenter
+                font.pixelSize: 16
+                font.family: settings.font_text
+                horizontalAlignment: Text.AlignLeft
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
+                style: Text.Outline
+                styleColor: settings.color_glow
+            }
+
+            Text {
+                visible: true
+                text: "pwr:"+_fcMavlinkSystem.mav_radio_status_power+ "mW";
+                color:  settings.color_text
+                verticalAlignment: Text.AlignVCenter
                 font.pixelSize: 12
                 font.family: settings.font_text
                 horizontalAlignment: Text.AlignLeft
@@ -221,33 +248,6 @@ BaseWidget {
                 style: Text.Outline
                 styleColor: settings.color_glow
             }
-            // Quality and pollution on the uplink are not usable due to not enough packets in most cases
-            /*Text {
-                visible: settings.downlink_signal_quality_show
-                text: settings.downlink_signal_quality_show ? ("Quality: "+_ohdSystemAir.current_rx_signal_quality+ "%") : ""
-                color:  settings.color_text
-                verticalAlignment: Text.AlignVCenter
-                font.pixelSize: 12
-                font.family: settings.font_text
-                horizontalAlignment: Text.AlignLeft
-                wrapMode: Text.NoWrap
-                elide: Text.ElideRight
-                style: Text.Outline
-                styleColor: settings.color_glow
-            }*/
-            /*Text {
-                visible: settings.downlink_pollution_show
-                text: settings.downlink_pollution_show ? ("Pollution: "+_ohdSystemAir.wb_link_pollution+ "%") : ""
-                color:  settings.color_text
-                verticalAlignment: Text.AlignVCenter
-                font.pixelSize: 12
-                font.family: settings.font_text
-                horizontalAlignment: Text.AlignLeft
-                wrapMode: Text.NoWrap
-                elide: Text.ElideRight
-                style: Text.Outline
-                styleColor: settings.color_glow
-            }*/
         }
     }
 }

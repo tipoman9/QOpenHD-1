@@ -108,6 +108,14 @@ bool AOHDSystem::process_message(const mavlink_message_t &msg)
             process_x3(parsedMsg);
             return true;
         }break;
+        case MAVLINK_MSG_ID_RADIO_STATUS:{
+            mavlink_radio_status_t radio_status;
+            mavlink_msg_radio_status_decode(&msg,&radio_status);
+            set_current_rx_rssi(radio_status.rssi);
+            set_curr_rx_packet_loss_perc(radio_status.noise);
+            return true;
+        }break;
+        
         case MAVLINK_MSG_ID_OPENHD_STATS_WB_VIDEO_AIR_FEC_PERFORMANCE:{
             mavlink_openhd_stats_wb_video_air_fec_performance_t parsedMsg;
             mavlink_msg_openhd_stats_wb_video_air_fec_performance_decode(&msg,&parsedMsg);
