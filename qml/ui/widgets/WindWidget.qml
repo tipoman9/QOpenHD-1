@@ -397,7 +397,8 @@ BaseWidget {
                         //   var wind=getWindDirection();
                         //  var wind_direction=wind.direction - _fcMavlinkSystem.hdg + 185;
                         //   return wind_direction;
-                        (settings.wind_plane_copter ? _fcMavlinkSystem.wind_direction : _fcMavlinkSystem.mav_wind_direction) - _fcMavlinkSystem.hdg - 170
+                        //(settings.wind_plane_copter ? _fcMavlinkSystem.wind_direction : _fcMavlinkSystem.mav_wind_direction) - _fcMavlinkSystem.hdg - 170
+                        _fcMavlinkSystem.mav_wind_direction
                     }
                 }
             }
@@ -435,8 +436,15 @@ BaseWidget {
                 font.pixelSize: 12
                 text: {
                     // @disable-check M223
-                    Number(settings.enable_imperial ? (settings.wind_plane_copter ? _fcMavlinkSystem.wind_speed * 2.237 : _fcMavlinkSystem.mav_wind_speed * 2.237) : (settings.wind_plane_copter ? _fcMavlinkSystem.wind_speed * 3.6 : _fcMavlinkSystem.mav_wind_speed * 3.6)).toLocaleString(
-                                Qt.locale(), 'f', 0)
+
+                    //Number(settings.enable_imperial ? (settings.wind_plane_copter ? _fcMavlinkSystem.wind_speed * 2.237 : _fcMavlinkSystem.mav_wind_speed * 2.237) : (settings.wind_plane_copter ? _fcMavlinkSystem.wind_speed * 3.6 : _fcMavlinkSystem.mav_wind_speed * 3.6)).toLocaleString(
+                    //       Qt.locale(), 'f', 0)
+
+                (_fcMavlinkSystem.mav_wind_speed>=0) ? 
+                (_fcMavlinkSystem.mav_wind_speed * 3.6).toLocaleString(Qt.locale(), 'f', 0)
+                : ((-_fcMavlinkSystem.mav_wind_speed * 3.6).toLocaleString(Qt.locale(), 'f', 0)) + "?"
+
+                
                 } // @disable-check M222
                 anchors.fill: parent
                 horizontalAlignment: Text.AlignHCenter
