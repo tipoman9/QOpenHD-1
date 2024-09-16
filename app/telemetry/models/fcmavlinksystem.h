@@ -124,6 +124,8 @@ public: // Stuff needs to be public for qt
     L_RO_PROP(double,wind_direction,set_wind_direction,0)
     L_RO_PROP(float,mav_wind_direction,set_mav_wind_direction,0)
     L_RO_PROP(float,mav_wind_speed,set_mav_wind_speed,0)
+    L_RO_PROP(float,mav_wind_speedX,set_mav_wind_speedX,0)
+    L_RO_PROP(float,mav_wind_speedY,set_mav_wind_speedY,0)
     // Not openhd rc or something, but the RSSI of the (for example) OpenLRS receiver
     // value reported by the FC. Between [0...100], -1 -=> No value reported
     L_RO_PROP(int,rc_rssi_percentage,set_rc_rssi_percentage,-1);

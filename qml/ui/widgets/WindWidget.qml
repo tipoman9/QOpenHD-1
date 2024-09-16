@@ -287,7 +287,8 @@ BaseWidget {
                     origin.x: 3
                     origin.y: 20
                     Behavior on angle {NumberAnimation { duration: settings.smoothing }}
-                    angle: (settings.wind_plane_copter ? _fcMavlinkSystem.wind_direction : _fcMavlinkSystem.mav_wind_direction) - _fcMavlinkSystem.hdg - 180
+                    //angle: (settings.wind_plane_copter ? _fcMavlinkSystem.wind_direction : _fcMavlinkSystem.mav_wind_direction) - _fcMavlinkSystem.hdg - 180
+                    angle:  _fcMavlinkSystem.mav_wind_direction  // - 180
                 }
             }
             Rectangle {
@@ -352,7 +353,7 @@ BaseWidget {
                 transform: Rotation {
                     origin.x: 25
                     origin.y: 25
-                    angle: (settings.wind_plane_copter ? _fcMavlinkSystem.wind_direction : _fcMavlinkSystem.mav_wind_direction - 10) - _fcMavlinkSystem.hdg - 190
+                    angle: _fcMavlinkSystem.mav_wind_direction //(settings.wind_plane_copter ? _fcMavlinkSystem.wind_direction : _fcMavlinkSystem.mav_wind_direction - 10) - _fcMavlinkSystem.hdg - 190
                 }
             }
             Shape {
@@ -391,14 +392,16 @@ BaseWidget {
                 transform: Rotation {
                     origin.x: 25
                     origin.y: 25
-                    angle: {
+                    angle:  {
                         // @disable-check M223
 
                         //   var wind=getWindDirection();
                         //  var wind_direction=wind.direction - _fcMavlinkSystem.hdg + 185;
                         //   return wind_direction;
                         //(settings.wind_plane_copter ? _fcMavlinkSystem.wind_direction : _fcMavlinkSystem.mav_wind_direction) - _fcMavlinkSystem.hdg - 170
-                        _fcMavlinkSystem.mav_wind_direction
+                        270
+                        //_fcMavlinkSystem.mav_wind_direction
+
                     }
                 }
             }
@@ -432,7 +435,8 @@ BaseWidget {
             Text {
                 id: wind_text
                 color: settings.color_text
-                anchors.centerIn: parent
+                //anchors.centerIn: parent
+                anchors.top: parent.top
                 font.pixelSize: 12
                 text: {
                     // @disable-check M223
@@ -440,12 +444,26 @@ BaseWidget {
                     //Number(settings.enable_imperial ? (settings.wind_plane_copter ? _fcMavlinkSystem.wind_speed * 2.237 : _fcMavlinkSystem.mav_wind_speed * 2.237) : (settings.wind_plane_copter ? _fcMavlinkSystem.wind_speed * 3.6 : _fcMavlinkSystem.mav_wind_speed * 3.6)).toLocaleString(
                     //       Qt.locale(), 'f', 0)
 
+                //negative value means the value is not accurate
                 (_fcMavlinkSystem.mav_wind_speed>=0) ? 
-                (_fcMavlinkSystem.mav_wind_speed * 3.6).toLocaleString(Qt.locale(), 'f', 0)
-                : ((-_fcMavlinkSystem.mav_wind_speed * 3.6).toLocaleString(Qt.locale(), 'f', 0)) + "?"
+                (_fcMavlinkSystem.mav_wind_speed * 3.6).toLocaleString(Qt.locale(), 'f', 1)
+                : ((-_fcMavlinkSystem.mav_wind_speed * 3.6).toLocaleString(Qt.locale(), 'f', 1)) + "?"
 
-                
                 } // @disable-check M222
+                anchors.fill: parent
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                style: Text.Outline
+                styleColor: settings.color_glow
+            }
+             Text {
+                id: wind_text2
+                color: settings.color_text  
+
+                anchors.top: parent.centerIn   
+                anchors.topMargin: 26           
+                font.pixelSize: 10
+                text:  {(_fcMavlinkSystem.mav_wind_speedX * 3.6).toLocaleString(Qt.locale(), 'f', 1)} 
                 anchors.fill: parent
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter

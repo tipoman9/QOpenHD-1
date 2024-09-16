@@ -387,7 +387,9 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
         mavlink_wind_t mav_wind;
         mavlink_msg_wind_decode(&msg, &mav_wind);
         set_mav_wind_direction(mav_wind.direction);
+        
         set_mav_wind_speed(mav_wind.speed);
+        set_mav_wind_speedX(mav_wind.speed_z);// a backup value
         /*qDebug() << "Windmavdir: " << mav_wind.direction;
             qDebug() << "Windmavspd: " << mav_wind.speed;*/
         break;
