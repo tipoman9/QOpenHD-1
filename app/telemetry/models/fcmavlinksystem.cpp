@@ -351,6 +351,7 @@ bool FCMavlinkSystem::process_message(const mavlink_message_t &msg)
     case MAVLINK_MSG_ID_VFR_HUD:{
         mavlink_vfr_hud_t vfr_hud;
         mavlink_msg_vfr_hud_decode (&msg, &vfr_hud);
+        
         set_throttle(vfr_hud.throttle);
         set_air_speed_meter_per_second(vfr_hud.airspeed);
         set_ground_speed_meter_per_second(vfr_hud.groundspeed);

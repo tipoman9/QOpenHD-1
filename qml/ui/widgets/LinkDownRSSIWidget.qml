@@ -65,7 +65,7 @@ BaseWidget {
         if(card_idx==3)card=_wifi_card_gnd3;
         // use rolling to not pollute the UI too much
         var ret="["+(card_idx+1)+"] " + int_to_string_N_chars_wide(card.n_received_packets_rolling,4) + " ";
-        ret+=" "+ int_to_string_N_chars_wide(card.packet_loss_perc,2)+"% "
+        ret+=" -"+ int_to_string_N_chars_wide(card.packet_loss_perc,2)+" "
         // Number(card.packet_loss_perc).toLocaleString( Qt.locale(), 'f', 0)
         // dBm of card in general
         ret += card.curr_rx_rssi_dbm + " dBm";
