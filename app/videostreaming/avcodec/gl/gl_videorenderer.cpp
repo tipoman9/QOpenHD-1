@@ -375,6 +375,87 @@ void GL_VideoRenderer::update_texture_NV12(AVFrame* frame) {
 
 }
 
+
+void GL_VideoRenderer::update_texture_QSV(AVFrame* frame) {
+    // Check if the frame is in QSV format and perform a transfer to a CPU-accessible format (e.g., NV12)
+    if (frame->format == AV_PIX_FMT_QSV) {
+        AVFrame* cpu_frame = av_frame_alloc(); // Allocate a new frame for the CPU-accessible format
+        if (!cpu_frame) {
+            fprintf(stderr, "Error allocating CPU frame\n");
+            return;
+        }
+
+        // Transfer data from the GPU (QSV) to CPU (NV12)
+        if (av_hwframe_transfer_data(cpu_frame, frame, 0) < 0) {
+            fprintf(stderr, "Error transferring QSV frame to CPU\n");
+            av_frame_free(&cpu_frame);
+            return;
+        }
+
+        if (frame)
+            av_frame_free(&frame);
+        // Now the CPU-accessible frame is in NV12 format
+        frame = cpu_frame;
+    }
+
+    // Handle the size change
+    if (sws_ctx != NULL && contextLastWidth != frame->width) {
+        sws_freeContext(sws_ctx);
+        sws_ctx = NULL; // Must be recreated
+        av_frame_free(&yuv420p_frame);
+        yuv420p_frame = NULL;
+    }
+
+    if (yuv420p_frame == NULL) {
+        // Allocate a YUV420P frame for conversion
+        yuv420p_frame = av_frame_alloc();
+        yuv420p_frame->format = AV_PIX_FMT_YUV420P;
+        yuv420p_frame->width = frame->width;
+        yuv420p_frame->height = frame->height;
+
+        // Allocate memory for the new frame
+        if (av_frame_get_buffer(yuv420p_frame, 32) < 0) {
+            fprintf(stderr, "Error allocating YUV420P frame buffer\n");
+            av_frame_free(&yuv420p_frame);
+            return;
+        }
+    }
+
+    // Create the conversion context if needed
+    if (sws_ctx == NULL) {
+        qDebug() << "Creating SWSContext for conversion.";
+        sws_ctx = sws_getContext(
+            frame->width, frame->height, AV_PIX_FMT_NV12,   // Source format is NV12 after transfer from QSV
+            frame->width, frame->height, AV_PIX_FMT_YUV420P, // Destination format is YUV420P
+            SWS_BILINEAR, NULL, NULL, NULL
+            );
+        contextLastWidth = frame->width;
+    }
+
+    if (!sws_ctx) {
+        fprintf(stderr, "Error creating SwsContext\n");
+        av_frame_free(&yuv420p_frame);
+        return;
+    }
+
+    // Perform the conversion from NV12 to YUV420P
+    sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height,
+              yuv420p_frame->data, yuv420p_frame->linesize);
+
+    // Copy frame properties from the original frame
+    av_frame_copy_props(frame, yuv420p_frame);
+
+    // Unref and free the original frame
+    av_frame_unref(frame);
+    av_frame_free(&frame);
+
+    // Call the function to update the texture
+    update_texture_yuv420P_yuv422P(yuv420p_frame);
+
+    return;
+}
+
+
 // "Consumes" the given hw_frame (makes sure it is freed at the apropriate time / the previous one
 // is freed when updating to a new one.
 void GL_VideoRenderer::update_texture_gl(AVFrame *frame) {
@@ -400,6 +481,10 @@ void GL_VideoRenderer::update_texture_gl(AVFrame *frame) {
   }else if(frame->format==AV_PIX_FMT_NV12){
     
 	update_texture_NV12(frame);
+
+  }else if(frame->format==AV_PIX_FMT_QSV){
+
+    update_texture_QSV(frame);
 
   }else{
 	std::cerr << "Unimplemented to texture:" << safe_av_get_pix_fmt_name((AVPixelFormat)frame->format) << "\n";

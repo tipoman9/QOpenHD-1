@@ -1017,6 +1017,9 @@ void AVCodecDecoder::open_and_decode_until_error_custom_rtp(const QOpenHDVideoHe
         decoder_ctx->get_format  = get_hw_format;//this is SW decoding
         selected_decoding_type="SW";
     }
+
+    decoder_ctx->pix_fmt = AV_PIX_FMT_NV12;
+
     // A thread count of 1 reduces latency for both SW and HW decode, for HW Intel it is controlled by the driver
     decoder_ctx->thread_count = IntelQSV_HW_decode ? 0 : 1;
     av_log_set_level(AV_LOG_TRACE);
